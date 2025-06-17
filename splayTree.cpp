@@ -2,20 +2,17 @@
 #include <queue>
 using namespace std;
 
+// Node structure holds pair<int,int>
 struct Node
 {
-    int data;
+    pair<int, int> data;
     Node *left;
     Node *right;
     Node *parent;
-
-    Node(int value)
-    {
-        data = value;
-        left = right = parent = nullptr;
-    }
+    Node(pair<int, int> value) : data(value), left(nullptr), right(nullptr), parent(nullptr) {}
 };
 
+// Rotations and splay are unchanged except key type
 void rotateLeft(Node *x, Node *&root)
 {
     Node *y = x->right;
@@ -25,7 +22,7 @@ void rotateLeft(Node *x, Node *&root)
     y->parent = x->parent;
     if (!x->parent)
         root = y;
-    else if (x->parent->left == x)
+    else if (x == x->parent->left)
         x->parent->left = y;
     else
         x->parent->right = y;
@@ -42,7 +39,7 @@ void rotateRight(Node *x, Node *&root)
     y->parent = x->parent;
     if (!x->parent)
         root = y;
-    else if (x->parent->left == x)
+    else if (x == x->parent->left)
         x->parent->left = y;
     else
         x->parent->right = y;
@@ -95,29 +92,8 @@ void splay(Node *x, Node *&root)
     }
 }
 
-Node *find(int key, Node *&root)
-{
-    Node *curr = root;
-    Node *last = nullptr;
-    while (curr)
-    {
-        last = curr;
-        if (key < curr->data)
-            curr = curr->left;
-        else if (key > curr->data)
-            curr = curr->right;
-        else
-        {
-            splay(curr, root);
-            return curr;
-        }
-    }
-    if (last)
-        splay(last, root);
-    return last;
-}
-
-Node *insertInBST(Node *&root, int key)
+// BST insert (without balancing)
+Node *insertInBST(Node *&root, pair<int, int> key)
 {
     Node *parent = nullptr;
     Node *curr = root;
@@ -126,7 +102,7 @@ Node *insertInBST(Node *&root, int key)
         parent = curr;
         if (key < curr->data)
             curr = curr->left;
-        else if (key > curr->data)
+        else if (curr->data < key)
             curr = curr->right;
         else
             return curr; // already exists
@@ -142,36 +118,47 @@ Node *insertInBST(Node *&root, int key)
     return newNode;
 }
 
-void insert(Node *&root, int key)
+void insert(Node *&root, pair<int, int> key)
 {
     Node *node = insertInBST(root, key);
     splay(node, root);
 }
 
-void del(Node *&root, int key)
+// Find without splaying
+Node *contains(Node *root, pair<int, int> key)
+{
+    Node *curr = root;
+    while (curr)
+    {
+        if (key < curr->data)
+            curr = curr->left;
+        else if (curr->data < key)
+            curr = curr->right;
+        else
+            return curr;
+    }
+    return nullptr;
+}
+
+// Delete a key (if present) and rebalance
+void del(Node *&root, pair<int, int> key)
 {
     if (!root)
         return;
-
-    Node *node = find(key, root);
+    // Splay the node (or nearest) to root
+    Node *node = contains(root, key);
     if (!node || node->data != key)
-    {
-        cout << "Key " << key << " is not present\n";
         return;
-    }
-
-    // Node to delete is now root
+    splay(node, root);
+    // Now node is root
     Node *leftSub = root->left;
     Node *rightSub = root->right;
-
     if (leftSub)
         leftSub->parent = nullptr;
     if (rightSub)
         rightSub->parent = nullptr;
-
     delete root;
     root = nullptr;
-
     if (!leftSub && !rightSub)
         return;
     if (!leftSub)
@@ -179,26 +166,25 @@ void del(Node *&root, int key)
         root = rightSub;
         return;
     }
-    // Splay max of leftSub
+    // Splay the maximum of leftSub to attach rightSub
     Node *maxNode = leftSub;
     while (maxNode->right)
         maxNode = maxNode->right;
     splay(maxNode, leftSub);
-
     maxNode->right = rightSub;
     if (rightSub)
         rightSub->parent = maxNode;
-
     root = maxNode;
 }
 
+// Find deepest (farthest) node via BFS
 Node *findFarthest(Node *root)
 {
     if (!root)
-        return NULL;
+        return nullptr;
     queue<Node *> q;
     q.push(root);
-    Node *curr = NULL;
+    Node *curr = nullptr;
     while (!q.empty())
     {
         curr = q.front();
@@ -211,26 +197,12 @@ Node *findFarthest(Node *root)
     return curr;
 }
 
-Node *contains(Node *root, int key)
-{
-    Node *curr = root;
-    while (curr)
-    {
-        if (key < curr->data)
-            curr = curr->left;
-        else if (key > curr->data)
-            curr = curr->right;
-        else
-            return curr;
-    }
-    return NULL;
-}
-
+// Pre-order traversal for output
 void preorder(Node *root)
 {
     if (!root)
         return;
-    cout << root->data << " ";
+    cout << "(" << root->data.first << "," << root->data.second << ") ";
     preorder(root->left);
     preorder(root->right);
 }
@@ -242,14 +214,10 @@ class SplayCache
     int size;
 
 public:
-    SplayCache(int capacity)
-    {
-        root = NULL;
-        this->capacity = capacity;
-        size = 0;
-    }
+    SplayCache(int capacity) : root(nullptr), capacity(capacity), size(0) {}
 
-    bool Read(int key)
+    // Read returns true if hit, false if miss (and inserts on miss)
+    bool Read(pair<int, int> key)
     {
         Node *temp = contains(root, key);
         if (temp)
@@ -258,13 +226,12 @@ public:
             return true;
         }
         if (size == capacity)
-        {
             evictDeepest();
-        }
         insert(root, key);
         size++;
         return false;
     }
+
     void dump()
     {
         cout << "Cache contents (pre-order): ";
@@ -285,20 +252,17 @@ private:
 
 int main()
 {
-   
     SplayCache cache(3);
-
-
-    int testKeys[] = {1, 2, 3, 1, 4, 5, 2, 6, 3};
-    
+    vector<pair<int, int>> testKeys = {
+        {1, 2}, {2, 3}, {3, 4}, {1, 2}, {4, 5}, {5, 6}, {2, 3}, {6, 7}, {3, 4}};
     cout << "=== SplayCache Test (capacity=3) ===\n";
-    for (int key : testKeys)
+    for (auto key : testKeys)
     {
         bool hit = cache.Read(key);
-        cout << (hit ? "Hit:  " : "Miss: ") << key << "\n";
+        cout << (hit ? "Hit:  " : "Miss: ")
+             << "(" << key.first << "," << key.second << ")\n";
         cache.dump();
         cout << "--------------------------\n";
     }
-
     return 0;
 }
