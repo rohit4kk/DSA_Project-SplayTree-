@@ -2,31 +2,36 @@
 #include <unordered_map>
 using namespace std;
 
+// Hash function for pair<int,int>
+struct pair_hash
+{
+    size_t operator()(const pair<int, int> &p) const noexcept
+    {
+        // Combine the hashes of the two ints
+        return hash<int>()(p.first) ^ (hash<int>()(p.second) << 1);
+    }
+};
+
 class Node
 {
 public:
-    int key, val;
+    pair<int, int> key;
+    int val;
     Node *next;
     Node *prev;
-    Node(int _key, int _val)
-    {
-        key = _key;
-        val = _val;
-        next = prev = nullptr;
-    }
+    Node(pair<int, int> _key, int _val) : key(_key), val(_val), next(nullptr), prev(nullptr) {}
 };
 
 class LRUCache
 {
 public:
-    Node *head = new Node(-1, -1);
-    Node *tail = new Node(-1, -1);
+    Node *head = new Node({-1, -1}, -1);
+    Node *tail = new Node({-1, -1}, -1);
     int cap;
-    unordered_map<int, Node *> m;
+    unordered_map<pair<int, int>, Node *, pair_hash> m;
 
-    LRUCache(int capacity)
+    LRUCache(int capacity) : cap(capacity)
     {
-        cap = capacity;
         head->next = tail;
         tail->prev = head;
     }
@@ -40,7 +45,7 @@ public:
         temp->prev = newnode;
     }
 
-    void deletenode(Node *delnode)
+    void deleteNode(Node *delnode)
     {
         Node *delprev = delnode->prev;
         Node *delnext = delnode->next;
@@ -48,34 +53,52 @@ public:
         delnext->prev = delprev;
     }
 
-    int get(int key)
+    int get(const pair<int, int> &key)
     {
-        if (m.find(key) != m.end())
+        if (m.find(key) == m.end()) // Miss
+        {
+            // If at capacity, evict least recently used first
+            if (m.size() == cap)
+            {
+                m.erase(tail->prev->key);
+                deleteNode(tail->prev);
+            }
+            // Insert new node with fallback -1
+            insert_atHead(new Node(key, 0));
+
+            m[key] = head->next;
+            return -1;
+        }
+        else // Hit
         {
             Node *resnode = m[key];
             int res = resnode->val;
-            m.erase(key);
-            deletenode(resnode);
+
+            // Move it to the head
+            deleteNode(resnode);
             insert_atHead(resnode);
-            m[key] = head->next;
+
             return res;
         }
-        return -1;
     }
 
-    void put(int key, int value)
+    // Insert or update (key,value). Evict LRU if at capacity.
+    void put(const pair<int, int> &key, int value)
     {
         if (m.find(key) != m.end())
         {
+            // Remove old node
             Node *existingnode = m[key];
             m.erase(key);
-            deletenode(existingnode);
+            deleteNode(existingnode);
         }
         if (m.size() == cap)
         {
+            // Evict least-recently used (tail->prev)
             m.erase(tail->prev->key);
-            deletenode(tail->prev);
+            deleteNode(tail->prev);
         }
+        // Insert new node at head
         insert_atHead(new Node(key, value));
         m[key] = head->next;
     }
@@ -83,19 +106,20 @@ public:
 
 int main()
 {
+    // Example test with pair keys
+    // Capacity = 2
     LRUCache cache(2);
 
-    cache.put(1, 1);
-    cache.put(2, 2);
-    cout << cache.get(1) << endl;
+    cache.put({1, 2}, 10);
+    cache.put({2, 3}, 20);
+    cout << cache.get({1, 2}) << endl; // Prints 10 (Hit)
 
-    cache.put(3, 3);
-    cout << cache.get(2) << endl;
-
-    cache.put(4, 4);
-    cout << cache.get(1) << endl;
-    cout << cache.get(3) << endl;
-    cout << cache.get(4) << endl;
+    // This will cause eviction of (2, 3) due to LRU
+    cache.put({4, 5}, 40);
+    cout << cache.get({2, 3}) << endl; // Prints -1 (Miss)
+    cout << cache.get({4, 5}) << endl; // Prints 40 (Hit)
+    cout << cache.get({1, 2}) << endl; // Prints 10 (Hit)
+    cout << cache.get({1, 2}) << endl; // Prints 10 (Hit)
 
     return 0;
 }
