@@ -1,0 +1,534 @@
+#include <iostream>
+#include <vector>
+#include <list>
+#include <unordered_map>
+#include <queue>
+#include <limits>
+#include <algorithm>
+#include <random>
+#include <chrono>
+using namespace std;
+
+// Custom hash for pair<int, int>
+struct pair_hash
+{
+    size_t operator()(const pair<int, int> &p) const
+    {
+        // A simple hash combine (based on boost)
+        auto h1 = std::hash<int>()(p.first);
+        auto h2 = std::hash<int>()(p.second);
+        return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+    }
+};
+
+// LRU Cache with pair<int,int> key and vector<int> value
+class LRUCache
+{
+private:
+    int capacity;
+    // Doubly linked list to store keys and values. Front = most recent.
+    list<pair<pair<int, int>, vector<int>>> cacheList;
+    // Hash map to store key to list iterator mapping.
+    unordered_map<pair<int, int>, list<pair<pair<int, int>, vector<int>>>::iterator, pair_hash> cacheMap;
+
+public:
+    LRUCache(int cap) : capacity(cap) {}
+
+    void printCache()
+    {
+        cout << "LRU Cache state [MRU -> LRU]: ";
+        for (const auto &item : cacheList) // or whatever your list is
+        {
+            cout << "(" << item.first.first << ", " << item.first.second << ") ";
+        }
+        cout << endl;
+    }
+
+    // Get value from cache, return true if found (hit), false if not (miss).
+    bool get(const pair<int, int> &key, vector<int> &value)
+    {
+        auto it = cacheMap.find(key);
+        if (it == cacheMap.end())
+        {
+            // Cache miss
+            return false;
+        }
+        // Cache hit: move the accessed element to the front (most recent)
+        cacheList.splice(cacheList.begin(), cacheList, it->second);
+        value = it->second->second;
+        return true;
+    }
+
+    // Put value into cache.
+    void put(const pair<int, int> &key, const vector<int> &value)
+    {
+        auto it = cacheMap.find(key);
+        if (it != cacheMap.end())
+        {
+            // Key already exists: update the value and move to front
+            it->second->second = value;
+            cacheList.splice(cacheList.begin(), cacheList, it->second);
+        }
+        else
+        {
+            // Insert new key-value
+            if ((int)cacheList.size() == capacity)
+            {
+                // Remove least recently used (the back of the list)
+                auto last = cacheList.back();
+                cacheMap.erase(last.first);
+                cacheList.pop_back();
+            }
+            // Insert the new key-value at front
+            cacheList.emplace_front(key, value);
+            cacheMap[key] = cacheList.begin();
+        }
+    }
+};
+
+// Splay Tree node for SplayCache
+struct SplayNode
+{
+    pair<int, int> key;
+    vector<int> value;
+    SplayNode *left;
+    SplayNode *right;
+    SplayNode(const pair<int, int> &k, const vector<int> &val)
+        : key(k), value(val), left(nullptr), right(nullptr) {}
+};
+
+class SplayCache
+{
+private:
+    SplayNode *root;
+    int capacity;
+    int size;
+
+    // Right rotation
+    SplayNode *rotateRight(SplayNode *x)
+    {
+        SplayNode *y = x->left;
+        x->left = y->right;
+        y->right = x;
+        return y;
+    }
+    // Left rotation
+    SplayNode *rotateLeft(SplayNode *x)
+    {
+        SplayNode *y = x->right;
+        x->right = y->left;
+        y->left = x;
+        return y;
+    }
+
+    // Splay operation
+    SplayNode *splay(SplayNode *root, const pair<int, int> &k)
+    {
+        if (root == nullptr)
+            return nullptr;
+
+        SplayNode header({0, 0}, {});
+        SplayNode *LeftTreeMax = &header;
+        SplayNode *RightTreeMin = &header;
+
+        header.left = header.right = nullptr;
+
+        while (true)
+        {
+            if (k < root->key)
+            {
+                if (root->left == nullptr)
+                    break;
+                if (k < root->left->key)
+                {
+                    root = rotateRight(root);
+                    if (root->left == nullptr)
+                        break;
+                }
+                // Link to right tree
+                RightTreeMin->left = root;
+                RightTreeMin = root;
+                root = root->left;
+                RightTreeMin->left = nullptr;
+            }
+            else if (k > root->key)
+            {
+                if (root->right == nullptr)
+                    break;
+                if (k > root->right->key)
+                {
+                    root = rotateLeft(root);
+                    if (root->right == nullptr)
+                        break;
+                }
+                // Link to left tree
+                LeftTreeMax->right = root;
+                LeftTreeMax = root;
+                root = root->right;
+                LeftTreeMax->right = nullptr;
+            }
+            else
+            {
+                break;
+            }
+        }
+        // Assemble
+        LeftTreeMax->right = root->left;
+        RightTreeMin->left = root->right;
+        root->left = header.right;
+        root->right = header.left;
+
+        return root;
+    }
+
+    SplayNode *insertInBST(SplayNode *&root, pair<int, int> key, vector<int> value, int &size)
+    {
+        if (root == nullptr)
+        {
+            root = new SplayNode(key, value);
+            size++;
+            return root;
+        }
+
+        SplayNode *curr = root;
+        SplayNode *parent = nullptr;
+
+        while (curr != nullptr)
+        {
+            parent = curr;
+            if (key == curr->key)
+            {
+                curr->value = value;
+                root = splay(root, key); // Bring it to root
+                return root;
+            }
+            else if (key < curr->key)
+            {
+                if (curr->left == nullptr)
+                {
+                    curr->left = new SplayNode(key, value);
+                    size++;
+                    root = splay(root, key); // Bring new node to root
+                    return root;
+                }
+                curr = curr->left;
+            }
+            else
+            {
+                if (curr->right == nullptr)
+                {
+                    curr->right = new SplayNode(key, value);
+                    size++;
+                    root = splay(root, key); // Bring new node to root
+                    return root;
+                }
+                curr = curr->right;
+            }
+        }
+
+        return root; // fallback (shouldn't hit)
+    }
+
+    void del(SplayNode *&root, pair<int, int> key, int &size)
+    {
+        if (!root)
+            return;
+
+        root = splay(root, key);
+        if (root->key == key)
+        {
+            SplayNode *tempLeft = root->left;
+            SplayNode *tempRight = root->right;
+
+            delete root;
+            size--;
+
+            root = NULL;
+            if (!tempLeft && !tempRight)
+                return;
+            if (!tempLeft)
+            {
+                root = tempRight;
+                return;
+            }
+
+            else
+            {
+                // Splay max of left side
+                SplayNode *maxNode = tempLeft;
+                while (maxNode->right)
+                    maxNode = maxNode->right;
+
+                tempLeft = splay(tempLeft, maxNode->key);
+                tempLeft->right = tempRight;
+
+                root = tempLeft;
+            }
+        }
+    }
+
+    SplayNode *findFarthest(SplayNode *root)
+    {
+        if (!root)
+            return NULL;
+        queue<SplayNode *> q;
+        q.push(root);
+        SplayNode *curr = NULL;
+        while (!q.empty())
+        {
+            curr = q.front();
+            q.pop();
+            if (curr->left)
+                q.push(curr->left);
+            if (curr->right)
+                q.push(curr->right);
+        }
+        return curr;
+    }
+
+    void evictDeepest()
+    {
+        if (!root)
+            return;
+
+        SplayNode *rem = findFarthest(root);
+        if (rem)
+        {
+            pair<int, int> key = rem->key;
+            del(root, key, size);
+        }
+    }
+
+    SplayNode *contains(SplayNode *root, pair<int, int> key)
+    {
+        if (root == NULL)
+            return NULL;
+
+        if (root->key == key)
+            return root;
+
+        if (key < root->key)
+            return contains(root->left, key);
+        return contains(root->right, key);
+    }
+
+public:
+    SplayCache(int capacity) : root(NULL), capacity(capacity), size(0) {}
+    void printCache()
+    {
+        cout << "Splay Tree (inorder): ";
+        inorder(root);
+        cout << endl;
+    }
+
+    void inorder(SplayNode *node)
+    {
+        if (node == NULL)
+            return;
+        cout << "(" << node->key.first << ", " << node->key.second << ") ";
+        inorder(node->left);
+
+        inorder(node->right);
+    }
+    // Get
+    bool get(const pair<int, int> &key, vector<int> &value)
+    {
+        if (root == NULL)
+            return false;
+
+        root = splay(root, key);
+        if (root->key == key)
+        {
+            value = root->value;
+            return true;
+        }
+        return false;
+    }
+
+    // Put
+    void put(const pair<int, int> &key, const vector<int> &value)
+    {
+        if (root == NULL)
+        {
+            root = new SplayNode(key, value);
+            size++;
+            return;
+        }
+
+        root = splay(root, key);
+        if (root->key == key)
+        {
+            root->value = value;
+        }
+        else
+        {
+            if (size == capacity)
+            {
+                evictDeepest();
+            }
+            insertInBST(root, key, value, size);
+        }
+    }
+    void add(const pair<int, int> &key, const vector<int> &value)
+    {
+        if (size == capacity)
+        {
+            evictDeepest();
+        }
+        insertInBST(root, key, value, size);
+    }
+};
+
+vector<int> dijkstra(int start, int end, const vector<vector<pair<int, int>>> &adjList)
+{
+    int n = adjList.size();
+    const int INF = numeric_limits<int>::max();
+    vector<int> dist(n, INF);
+    vector<int> parent(n, -1);
+    priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>> pq;
+
+    dist[start] = 0;
+    pq.push({0, start});
+
+    while (!pq.empty())
+    {
+        auto [currDist, u] = pq.top();
+        pq.pop();
+
+        if (currDist > dist[u])
+            continue;
+
+        for (const auto &[v, weight] : adjList[u])
+        {
+            if (dist[u] + weight < dist[v])
+            {
+                dist[v] = dist[u] + weight;
+                parent[v] = u;
+                pq.push({dist[v], v});
+            }
+        }
+    }
+
+    // Reconstruct the path from start to end
+    vector<int> path;
+    if (dist[end] == INF)
+        return path; // no path
+
+    for (int v = end; v != -1; v = parent[v])
+        path.push_back(v);
+
+    reverse(path.begin(), path.end());
+    return path;
+}
+
+int main()
+{
+    // Random large graph parameters
+    int n = 100;      // number of nodes
+    int edges = 5000; // number of random edges
+    vector<vector<pair<int, int>>> adjList(n);
+
+    // Random engine
+    std::mt19937 rng(static_cast<unsigned>(chrono::high_resolution_clock::now().time_since_epoch().count()));
+    std::uniform_int_distribution<int> nodeDist(0, n - 1);
+    std::uniform_int_distribution<int> weightDist(1, 20);
+
+    // Add random edges (undirected)
+    for (int i = 0; i < edges; ++i)
+    {
+        int u = nodeDist(rng);
+        int v = nodeDist(rng);
+        if (u == v)
+            continue;
+        int w = weightDist(rng);
+        adjList[u].push_back({v, w});
+        adjList[v].push_back({u, w});
+    }
+
+    // Caches with capacity
+    int capacity = 1000; // adjust as needed
+    LRUCache lru(capacity);
+    SplayCache splay(capacity);
+
+    // --- Zipfian Distribution Test Case ---
+    cout << "--- Running Cache Simulation with Zipfian Distributed Queries ---" << endl;
+
+    // Zipfian parameters
+    double zipf_s = 1.5; // Exponent parameter (common values are 0.5 to 2.0)
+    // N for Zipfian distribution, representing the number of items to distribute access over.
+    // Here, it refers to the number of nodes in the graph (0 to n-1).
+    int zipf_N = n;
+
+    // Calculate probabilities for each rank (k from 1 to zipf_N)
+    vector<double> zipf_probabilities(zipf_N);
+    double harmonic_sum = 0.0;
+    for (int k = 1; k <= zipf_N; ++k)
+    {
+        harmonic_sum += 1.0 / pow(k, zipf_s);
+    }
+
+    for (int k = 0; k < zipf_N; ++k)
+    {
+        // Probability for node 'k' (rank k+1 in Zipfian sense)
+        zipf_probabilities[k] = (1.0 / pow(k + 1, zipf_s)) / harmonic_sum;
+    }
+
+    // Create a discrete distribution based on Zipfian probabilities
+    // This distribution will return indices (0 to zipf_N-1) representing nodes
+    std::discrete_distribution<> zipf_dist(zipf_probabilities.begin(), zipf_probabilities.end());
+
+    // Generate queries using Zipfian distribution
+    int numQueries = 100000; // Increased queries for better distribution observation
+    vector<pair<int, int>> queries;
+    queries.reserve(numQueries);
+
+    for (int i = 0; i < numQueries; ++i)
+    {
+        int u = zipf_dist(rng); // Node u sampled from Zipfian distribution
+        int v = zipf_dist(rng); // Node v sampled from Zipfian distribution
+        // Ensure u and v are different for Dijkstra, or handle cases where they are the same
+        while (u == v)
+        {
+            v = zipf_dist(rng);
+        }
+        queries.emplace_back(u, v);
+    }
+
+    int lruHits = 0, splayHits = 0;
+    vector<int> path;
+
+    for (auto &q : queries)
+    {
+        int u = q.first;
+        int v = q.second;
+
+        // LRU Cache
+        if (lru.get(q, path))
+        {
+            lruHits++;
+        }
+        else
+        {
+            path = dijkstra(u, v, adjList);
+            lru.put(q, path);
+        }
+
+        // Splay Cache
+        if (splay.get(q, path))
+        {
+            splayHits++;
+        }
+        else
+        {
+            path = dijkstra(u, v, adjList);
+            splay.add(q, path);
+        }
+    }
+
+    cout << "Zipfian Parameters: s = " << zipf_s << ", N = " << zipf_N << endl;
+    cout << "Total Queries: " << numQueries << endl;
+    cout << "LRUCache Hit Rate: " << (double)lruHits / queries.size() * 100 << "%" << endl;
+    cout << "SplayCache Hit Rate: " << (double)splayHits / queries.size() * 100 << "%" << endl;
+
+    return 0;
+}
